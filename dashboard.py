@@ -161,7 +161,7 @@ def load_data(file_bytes: bytes) -> pd.DataFrame:
 
     # Numeric columns — NOTE: iKPI/proiect contains unit labels (MWp, MWh, LP, kVA...)
     # so it is kept as string (unit of measure), NOT converted to numeric
-    num_cols = ["Revenues [MEuro]", "GM [MEuro]", "GM %", "iKPI [Valoare]",
+    num_cols = ["Revenues [KEuro]", "GM [KEuro]", "GM %", "iKPI [Valoare]",
                 "Probabilitate semnare contract [%]"]
     for col in num_cols:
         if col in df.columns:
@@ -223,7 +223,7 @@ def apply_business_rules(df: pd.DataFrame) -> pd.DataFrame:
       Rule 3: GM % as arithmetic average (applied at aggregation time)
       Rule 4: Exclude rows with missing key fields
     """
-    required_cols = ["Revenues [MEuro]", "GM [MEuro]", "VAS"]
+    required_cols = ["Revenues [KEuro]", "GM [KEuro]", "VAS"]
     work = df.copy()
 
     # Rule 4 — drop rows missing key fields
@@ -306,8 +306,8 @@ def section_pipeline_kpis(df: pd.DataFrame):
     avg_pt = pt.mean()
 
     total_oferte = len(df[df["Tip oferta"].str.strip().isin(TIP_OFERTA_TYPES)]) if "Tip oferta" in df.columns else len(df)
-    total_rev = df["Revenues [MEuro]"].sum() if "Revenues [MEuro]" in df.columns else 0
-    total_gm = df["GM [MEuro]"].sum() if "GM [MEuro]" in df.columns else 0
+    total_rev = df["Revenues [KEuro]"].sum() if "Revenues [KEuro]" in df.columns else 0
+    total_gm = df["GM [KEuro]"].sum() if "GM [KEuro]" in df.columns else 0
     avg_gm_pct = df["GM %"].mean() * 100 if "GM %" in df.columns else 0
     sum_ikpi_val = df["iKPI [Valoare]"].sum() if "iKPI [Valoare]" in df.columns else 0
 
@@ -316,10 +316,10 @@ def section_pipeline_kpis(df: pd.DataFrame):
     cards_html += kpi_card("Total Oferte", fmt_num(total_oferte, 0), "Bugetara + Angajanta + Revizie",
                            accent="#52b788", bg="#1b4332", val_color="#d8f3dc", label_color="#95d5b2", sub_color="#52b788")
     # Card 2 — warm amber bg, dark brown text
-    cards_html += kpi_card("Total Revenue", fmt_num(total_rev, 2, "€", "M"), "MEuro",
+    cards_html += kpi_card("Total Revenue", fmt_num(total_rev, 2, "€", "K"), "KEuro",
                            accent="#e07c24", bg="#fff3e0", val_color="#7b3f00", label_color="#c25e00", sub_color="#e09a50")
     # Card 3 — slate blue bg, white text
-    cards_html += kpi_card("Total GM", fmt_num(total_gm, 2, "€", "M"), "MEuro",
+    cards_html += kpi_card("Total GM", fmt_num(total_gm, 2, "€", "K"), "KEuro",
                            accent="#4a90d9", bg="#e8f0fe", val_color="#1a3a6b", label_color="#2c5fa8", sub_color="#6aa3e0")
     # Card 4 — soft teal bg, deep teal text
     cards_html += kpi_card("Average GM %", fmt_num(avg_gm_pct, 1, "", "%"), "Arithmetic avg",
@@ -407,8 +407,8 @@ def section_product_type(df: pd.DataFrame):
         rows.append({
             "VAS": vas,
             "Total Oferte": total_oferte,
-            "Revenue (MEuro)": round(grp["Revenues [MEuro]"].sum(), 2) if "Revenues [MEuro]" in grp.columns else 0,
-            "GM (MEuro)": round(grp["GM [MEuro]"].sum(), 2) if "GM [MEuro]" in grp.columns else 0,
+            "Revenue (KEuro)": round(grp["Revenues [KEuro]"].sum(), 2) if "Revenues [KEuro]" in grp.columns else 0,
+            "GM (KEuro)": round(grp["GM [KEuro]"].sum(), 2) if "GM [KEuro]" in grp.columns else 0,
             "Avg GM %": round(grp["GM %"].mean() * 100, 1) if "GM %" in grp.columns else 0,
             "iKPI Unit": ikpi_unit,
             "iKPI Value": round(grp["iKPI [Valoare]"].sum(), 2) if "iKPI [Valoare]" in grp.columns else 0,
@@ -424,9 +424,9 @@ def section_product_type(df: pd.DataFrame):
             cards_html = '<div class="kpi-grid">'
             cards_html += kpi_card("Total Oferte", fmt_num(r["Total Oferte"], 0), f"VAS: {selected_vas}",
                                    accent="#52b788", bg="#1b4332", val_color="#d8f3dc", label_color="#95d5b2", sub_color="#52b788")
-            cards_html += kpi_card("Revenue", fmt_num(r["Revenue (MEuro)"], 2, "€", "M"), "MEuro",
+            cards_html += kpi_card("Revenue", fmt_num(r["Revenue (KEuro)"], 2, "€", "K"), "KEuro",
                                    accent="#e07c24", bg="#fff3e0", val_color="#7b3f00", label_color="#c25e00", sub_color="#e09a50")
-            cards_html += kpi_card("GM", fmt_num(r["GM (MEuro)"], 2, "€", "M"), "MEuro",
+            cards_html += kpi_card("GM", fmt_num(r["GM (KEuro)"], 2, "€", "K"), "KEuro",
                                    accent="#4a90d9", bg="#e8f0fe", val_color="#1a3a6b", label_color="#2c5fa8", sub_color="#6aa3e0")
             cards_html += kpi_card("Avg GM %", fmt_num(r["Avg GM %"], 1, "", "%"), "Arithmetic avg",
                                    accent="#2b9d8f", bg="#e0f2f1", val_color="#0d3b36", label_color="#1a7a6e", sub_color="#4dbfb3")
@@ -445,18 +445,18 @@ def section_product_type(df: pd.DataFrame):
     # ── Bar charts: Revenue / GM / iKPI per VAS ──
     col1, col2 = st.columns(2)
     with col1:
-        fig2 = px.bar(vas_summary, x="VAS", y="Revenue (MEuro)",
-                      title="Revenue by VAS (MEuro)", color="VAS",
+        fig2 = px.bar(vas_summary, x="VAS", y="Revenue (KEuro)",
+                      title="Revenue by VAS (KEuro)", color="VAS",
                       color_discrete_sequence=PALETTE,
-                      text=vas_summary["Revenue (MEuro)"].round(2))
+                      text=vas_summary["Revenue (KEuro)"].round(2))
         fig2.update_traces(textposition="outside")
         st.plotly_chart(styled_bar(fig2), use_container_width=True)
 
     with col2:
-        fig3 = px.bar(vas_summary, x="VAS", y="GM (MEuro)",
-                      title="GM by VAS (MEuro)", color="VAS",
+        fig3 = px.bar(vas_summary, x="VAS", y="GM (KEuro)",
+                      title="GM by VAS (KEuro)", color="VAS",
                       color_discrete_sequence=PALETTE,
-                      text=vas_summary["GM (MEuro)"].round(2))
+                      text=vas_summary["GM (KEuro)"].round(2))
         fig3.update_traces(textposition="outside")
         st.plotly_chart(styled_bar(fig3), use_container_width=True)
 
@@ -544,8 +544,8 @@ def section_product_performance(df: pd.DataFrame, label: str = ""):
         return
 
     agg = work.groupby(group_col).agg(
-        Revenue=("Revenues [MEuro]", "sum"),
-        GM=("GM [MEuro]", "sum"),
+        Revenue=("Revenues [KEuro]", "sum"),
+        GM=("GM [KEuro]", "sum"),
         GM_pct=("GM %", "mean"),
         iKPI=("iKPI [Valoare]", "sum"),
     ).reset_index()
@@ -554,14 +554,14 @@ def section_product_performance(df: pd.DataFrame, label: str = ""):
     col1, col2 = st.columns(2)
     with col1:
         fig = px.bar(agg, x=group_col, y="Revenue",
-                     title="Revenue by VAS (MEuro)", color=group_col,
+                     title="Revenue by VAS (KEuro)", color=group_col,
                      color_discrete_sequence=PALETTE, text=agg["Revenue"].round(2))
         fig.update_traces(textposition="outside")
         st.plotly_chart(styled_bar(fig), use_container_width=True)
 
     with col2:
         fig2 = px.bar(agg, x=group_col, y="GM",
-                      title="GM by VAS (MEuro)", color=group_col,
+                      title="GM by VAS (KEuro)", color=group_col,
                       color_discrete_sequence=PALETTE, text=agg["GM"].round(2))
         fig2.update_traces(textposition="outside")
         st.plotly_chart(styled_bar(fig2), use_container_width=True)
@@ -599,16 +599,16 @@ def section_signed_contracts(df: pd.DataFrame, label: str = ""):
         return
 
     total_signed  = len(signed_clean)
-    total_rev     = signed_clean["Revenues [MEuro]"].sum() if "Revenues [MEuro]" in signed_clean.columns else 0
-    total_gm      = signed_clean["GM [MEuro]"].sum()       if "GM [MEuro]" in signed_clean.columns else 0
+    total_rev     = signed_clean["Revenues [KEuro]"].sum() if "Revenues [KEuro]" in signed_clean.columns else 0
+    total_gm      = signed_clean["GM [KEuro]"].sum()       if "GM [KEuro]" in signed_clean.columns else 0
     avg_gm        = signed_clean["GM %"].mean() * 100      if "GM %" in signed_clean.columns else 0
 
     cards_html = '<div class="kpi-grid">'
     cards_html += kpi_card("Total Contracte Semnate", fmt_num(total_signed, 0), "Perioada selectata",
                            accent="#52b788", bg="#1b4332", val_color="#d8f3dc", label_color="#95d5b2", sub_color="#52b788")
-    cards_html += kpi_card("Signed Revenue", fmt_num(total_rev, 2, "€", "M"), "MEuro",
+    cards_html += kpi_card("Signed Revenue", fmt_num(total_rev, 2, "€", "K"), "KEuro",
                            accent="#e07c24", bg="#fff3e0", val_color="#7b3f00", label_color="#c25e00", sub_color="#e09a50")
-    cards_html += kpi_card("Signed GM", fmt_num(total_gm, 2, "€", "M"), "MEuro",
+    cards_html += kpi_card("Signed GM", fmt_num(total_gm, 2, "€", "K"), "KEuro",
                            accent="#4a90d9", bg="#e8f0fe", val_color="#1a3a6b", label_color="#2c5fa8", sub_color="#6aa3e0")
     cards_html += kpi_card("Avg GM %", fmt_num(avg_gm, 1, "", "%"), "Arithmetic avg",
                            accent="#c0485a", bg="#fce4ec", val_color="#5c0a1a", label_color="#a0283a", sub_color="#d47080")
@@ -619,11 +619,11 @@ def section_signed_contracts(df: pd.DataFrame, label: str = ""):
         col1, col2 = st.columns(2)
         with col1:
             if "VAS" in signed_clean.columns:
-                vas_rev = signed_clean.groupby("VAS")["Revenues [MEuro]"].sum().reset_index()
-                fig = px.bar(vas_rev, x="VAS", y="Revenues [MEuro]",
+                vas_rev = signed_clean.groupby("VAS")["Revenues [KEuro]"].sum().reset_index()
+                fig = px.bar(vas_rev, x="VAS", y="Revenues [KEuro]",
                              title="Signed Revenue by VAS",
                              color="VAS", color_discrete_sequence=PALETTE,
-                             text=vas_rev["Revenues [MEuro]"].round(2))
+                             text=vas_rev["Revenues [KEuro]"].round(2))
                 fig.update_traces(textposition="outside")
                 st.plotly_chart(styled_bar(fig), use_container_width=True)
 
@@ -641,7 +641,7 @@ def section_signed_contracts(df: pd.DataFrame, label: str = ""):
         st.markdown('<div class="section-header">Detaliu Contracte Semnate</div>', unsafe_allow_html=True)
 
         display_cols = ["Client name", "VAS", "Tip oferta", "Inginer Ofertare",
-                        "Revenues [MEuro]", "GM [MEuro]", "GM %",
+                        "Revenues [KEuro]", "GM [KEuro]", "GM %",
                         "Data start oferta", "Data transmitere oferta", "Motiv KO", "Observatii"]
         display_cols = [c for c in display_cols if c in signed_clean.columns]
 
@@ -657,7 +657,7 @@ def section_signed_contracts(df: pd.DataFrame, label: str = ""):
                 table[dcol] = pd.to_datetime(table[dcol]).dt.strftime("%d.%m.%Y")
 
         # Round numeric columns
-        for ncol in ["Revenues [MEuro]", "GM [MEuro]"]:
+        for ncol in ["Revenues [KEuro]", "GM [KEuro]"]:
             if ncol in table.columns:
                 table[ncol] = table[ncol].round(2)
 
@@ -695,8 +695,8 @@ def section_engineer_performance(df: pd.DataFrame):
         bugetara  = (grp["Tip oferta"].str.strip() == "Bugetara").sum()  if "Tip oferta" in grp.columns else 0
         angajanta = (grp["Tip oferta"].str.strip() == "Angajanta").sum() if "Tip oferta" in grp.columns else 0
         revizie   = (grp["Tip oferta"].str.strip() == "Revizie").sum()   if "Tip oferta" in grp.columns else 0
-        total_rev = grp["Revenues [MEuro]"].sum()  if "Revenues [MEuro]" in grp.columns else 0
-        total_gm  = grp["GM [MEuro]"].sum()        if "GM [MEuro]" in grp.columns else 0
+        total_rev = grp["Revenues [KEuro]"].sum()  if "Revenues [KEuro]" in grp.columns else 0
+        total_gm  = grp["GM [KEuro]"].sum()        if "GM [KEuro]" in grp.columns else 0
         avg_gm    = grp["GM %"].mean() * 100       if "GM %" in grp.columns else 0
         avg_pt    = grp["_proc_time"].mean()
         signed    = int(signed_mask.loc[grp.index].sum())
@@ -708,8 +708,8 @@ def section_engineer_performance(df: pd.DataFrame):
             "Angajanta":                 int(angajanta),
             "Revizie":                   int(revizie),
             "Total Offers":              int(bugetara + angajanta + revizie),
-            "Total Revenue (MEuro)":     round(total_rev, 2),
-            "Total GM (MEuro)":          round(total_gm, 2),
+            "Total Revenue (KEuro)":     round(total_rev, 2),
+            "Total GM (KEuro)":          round(total_gm, 2),
             "Avg GM %":                  round(avg_gm, 1),
             "iKPI [Valoare]":            round(ikpi_val, 2),
             "Avg Processing Time (days)": round(avg_pt, 1) if pd.notna(avg_pt) else 0,
@@ -749,10 +749,10 @@ def section_engineer_performance(df: pd.DataFrame):
         st.plotly_chart(styled_bar(fig3), use_container_width=True)
 
     with col4:
-        fig4 = px.bar(eng_df, x="Engineer", y="Total Revenue (MEuro)",
-                      title="Total Revenue per Engineer (MEuro)",
+        fig4 = px.bar(eng_df, x="Engineer", y="Total Revenue (KEuro)",
+                      title="Total Revenue per Engineer (KEuro)",
                       color="Engineer", color_discrete_sequence=PALETTE,
-                      text=eng_df["Total Revenue (MEuro)"].round(2))
+                      text=eng_df["Total Revenue (KEuro)"].round(2))
         fig4.update_traces(textposition="outside")
         st.plotly_chart(styled_bar(fig4), use_container_width=True)
 
@@ -790,13 +790,13 @@ def section_comparison(df_full: pd.DataFrame):
     work_b = apply_business_rules(df_b)
 
     def summarise(work, label):
-        rev = work["Revenues [MEuro]"].sum() if "Revenues [MEuro]" in work.columns else 0
-        gm = work["GM [MEuro]"].sum() if "GM [MEuro]" in work.columns else 0
+        rev = work["Revenues [KEuro]"].sum() if "Revenues [KEuro]" in work.columns else 0
+        gm = work["GM [KEuro]"].sum() if "GM [KEuro]" in work.columns else 0
         gm_pct = work["GM %"].mean() * 100 if "GM %" in work.columns else 0
         ikpi = work["iKPI [Valoare]"].sum() if "iKPI [Valoare]" in work.columns else 0
-        signed_rev = (work[work["Status Oferta"].str.strip() == "Signed"]["Revenues [MEuro]"].sum()
-                      if "Status Oferta" in work.columns and "Revenues [MEuro]" in work.columns else 0)
-        return {"Period": label, "Revenue (MEuro)": rev, "GM (MEuro)": gm,
+        signed_rev = (work[work["Status Oferta"].str.strip() == "Signed"]["Revenues [KEuro]"].sum()
+                      if "Status Oferta" in work.columns and "Revenues [KEuro]" in work.columns else 0)
+        return {"Period": label, "Revenue (KEuro)": rev, "GM (KEuro)": gm,
                 "GM %": gm_pct, "iKPI": ikpi, "Signed Revenue": signed_rev,
                 "Offers": len(work)}
 
@@ -804,7 +804,7 @@ def section_comparison(df_full: pd.DataFrame):
     summ_b = summarise(work_b, b_label)
     cmp_df = pd.DataFrame([summ_a, summ_b])
 
-    metrics = ["Revenue (MEuro)", "GM (MEuro)", "GM %", "iKPI", "Signed Revenue", "Offers"]
+    metrics = ["Revenue (KEuro)", "GM (KEuro)", "GM %", "iKPI", "Signed Revenue", "Offers"]
     col1, col2, col3 = st.columns(3)
     cols_cycle = [col1, col2, col3]
     for i, metric in enumerate(metrics):
@@ -820,8 +820,8 @@ def section_comparison(df_full: pd.DataFrame):
     # VAS-level comparison
     if "VAS" in work_a.columns and "VAS" in work_b.columns:
         st.markdown("##### Revenue by VAS — Comparison")
-        vas_a = work_a.groupby("VAS")["Revenues [MEuro]"].sum().rename(a_label)
-        vas_b = work_b.groupby("VAS")["Revenues [MEuro]"].sum().rename(b_label)
+        vas_a = work_a.groupby("VAS")["Revenues [KEuro]"].sum().rename(a_label)
+        vas_b = work_b.groupby("VAS")["Revenues [KEuro]"].sum().rename(b_label)
         vas_cmp = pd.concat([vas_a, vas_b], axis=1).fillna(0).reset_index()
         fig_vas = px.bar(vas_cmp, x="VAS", y=[a_label, b_label],
                          barmode="group", title="Revenue by VAS — Period Comparison",
@@ -899,7 +899,7 @@ def main():
         '>
             <div style='font-size: 1rem; font-weight: 600; color: #2e7d32;'>Drop your Excel file above</div>
             <div style='font-size: 0.8rem; margin-top: 8px; color: #558b2f;'>
-                Expected columns: Nr. Oferta, Client name, VAS, Revenues [MEuro], GM [MEuro], GM %, Status Oferta, Tip oferta, etc.
+                Expected columns: Nr. Oferta, Client name, VAS, Revenues [KEuro], GM [KEuro], GM %, Status Oferta, Tip oferta, etc.
             </div>
         </div>
         """, unsafe_allow_html=True)
