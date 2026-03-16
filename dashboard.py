@@ -85,8 +85,15 @@ html, body, [class*="css"] {
     padding-left: 10px; border-radius: 4px 0 0 0;
 }
 
-/* Plotly chart containers */
-.js-plotly-plot { border-radius: 10px; }
+/* Selectbox dropdown text — force black for readability */
+[data-testid="stSelectbox"] div[data-baseweb="select"] span,
+[data-testid="stSelectbox"] div[data-baseweb="select"] div,
+[data-baseweb="popover"] li,
+[data-baseweb="popover"] ul span,
+[role="listbox"] li,
+[role="option"] { color: #111111 !important; }
+[data-baseweb="popover"] { background: #ffffff !important; }
+[role="listbox"] { background: #ffffff !important; }
 
 /* Tabs */
 [data-testid="stTabs"] button { font-size: 0.82rem; font-weight: 600; color: #2d6a4f; }
@@ -391,6 +398,8 @@ def section_product_type(df: pd.DataFrame):
                                    accent="#4a90d9", bg="#e8f0fe", val_color="#1a3a6b", label_color="#2c5fa8", sub_color="#6aa3e0")
             cards_html += kpi_card("Avg GM %", fmt_num(r["Avg GM %"], 1, "", "%"), "Arithmetic avg",
                                    accent="#2b9d8f", bg="#e0f2f1", val_color="#0d3b36", label_color="#1a7a6e", sub_color="#4dbfb3")
+            cards_html += kpi_card("iKPI Projects", fmt_num(r["iKPI Projects"], 0), "Sum iKPI/proiect",
+                                   accent="#9b6fa8", bg="#f3e8f8", val_color="#3b1a4a", label_color="#7a3a9a", sub_color="#b890c8")
             cards_html += kpi_card("iKPI Value", fmt_num(r["iKPI Value"], 1), "iKPI [Valoare]",
                                    accent="#c0485a", bg="#fce4ec", val_color="#5c0a1a", label_color="#a0283a", sub_color="#d47080")
             cards_html += kpi_card("Avg Processing Time", fmt_num(r["Avg Processing Time (days)"], 1, "", " days"), "Business days",
@@ -623,15 +632,22 @@ def section_engineer_performance(df: pd.DataFrame):
     df = df.copy()
     df["_proc_time"] = calc_processing_time(df)
 
+    # Pre-compute signed mask on the full (period-filtered) df
+    if "Status Oferta" in df.columns:
+        signed_mask = df["Status Oferta"].str.strip().str.lower() == "signed"
+    else:
+        signed_mask = pd.Series(False, index=df.index)
+
     eng_stats = []
     for eng, grp in df.groupby(eng_col):
-        bugetara = (grp["Tip oferta"].str.strip() == "Bugetara").sum() if "Tip oferta" in grp.columns else 0
+        bugetara  = (grp["Tip oferta"].str.strip() == "Bugetara").sum()  if "Tip oferta" in grp.columns else 0
         angajanta = (grp["Tip oferta"].str.strip() == "Angajanta").sum() if "Tip oferta" in grp.columns else 0
-        revizie = (grp["Tip oferta"].str.strip() == "Revizie").sum() if "Tip oferta" in grp.columns else 0
+        revizie   = (grp["Tip oferta"].str.strip() == "Revizie").sum()   if "Tip oferta" in grp.columns else 0
         total_rev = grp["Revenues [MEuro]"].sum() if "Revenues [MEuro]" in grp.columns else 0
-        avg_gm = grp["GM %"].mean() * 100 if "GM %" in grp.columns else 0
-        avg_pt = grp["_proc_time"].mean()
-        signed = (grp.get("Status Oferta", pd.Series()).str.strip() == "Signed").sum()
+        avg_gm    = grp["GM %"].mean() * 100       if "GM %" in grp.columns else 0
+        avg_pt    = grp["_proc_time"].mean()
+        # Count signed contracts: rows belonging to this engineer where status = Signed
+        signed    = signed_mask.loc[grp.index].sum()
 
         eng_stats.append({
             "Engineer": eng,
@@ -642,7 +658,7 @@ def section_engineer_performance(df: pd.DataFrame):
             "Total Revenue (MEuro)": round(total_rev, 2),
             "Avg GM %": round(avg_gm, 1),
             "Avg Processing Time (days)": round(avg_pt, 1) if not np.isnan(avg_pt) else 0,
-            "Signed Contracts": signed,
+            "Signed Contracts": int(signed),
         })
 
     eng_df = pd.DataFrame(eng_stats).sort_values("Total Offers", ascending=False)
