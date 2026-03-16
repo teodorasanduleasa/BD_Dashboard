@@ -131,22 +131,23 @@ STATUS_TYPES = ["Design", "KO", "Lost", "Presented", "Qualification", "Signed"]
 @st.cache_data(show_spinner=False)
 def load_data(file_bytes: bytes) -> pd.DataFrame:
     """Load and clean the Excel file."""
-    df = pd.read_excel(io.BytesIO(file_bytes))
+    df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0)
 
     # Normalize column names: strip whitespace and normalize spaces
     df.columns = [str(c).strip().replace("\xa0", " ").replace("  ", " ") for c in df.columns]
 
+    # Normalize all string columns: strip trailing/leading spaces
+    # This fixes issues like "Stefan Patru " vs "Stefan Patru"
+    for col in df.select_dtypes(include="object").columns:
+        df[col] = df[col].astype(str).str.strip().replace("nan", np.nan)
+
     # Robust date parser — tries multiple formats
     def parse_date_col(series: pd.Series) -> pd.Series:
-        # If already datetime (Excel numeric dates), pandas handles it
         if pd.api.types.is_datetime64_any_dtype(series):
             return series
-        # Try dayfirst (European format DD/MM/YYYY)
         parsed = pd.to_datetime(series, errors="coerce", dayfirst=True)
-        # If more than 80% parsed successfully, use it
         if parsed.notna().mean() >= 0.8:
             return parsed
-        # Try yearfirst (YYYY-MM-DD)
         parsed2 = pd.to_datetime(series, errors="coerce", dayfirst=False)
         if parsed2.notna().mean() >= parsed.notna().mean():
             return parsed2
@@ -158,15 +159,18 @@ def load_data(file_bytes: bytes) -> pd.DataFrame:
         if col in df.columns:
             df[col] = parse_date_col(df[col])
 
-    # Numeric columns
-    num_cols = ["Revenues [MEuro]", "GM [MEuro]", "GM %", "iKPI [Valoare]", "iKPI/proiect",
+    # Numeric columns — NOTE: iKPI/proiect contains unit labels (MWp, MWh, LP, kVA...)
+    # so it is kept as string (unit of measure), NOT converted to numeric
+    num_cols = ["Revenues [MEuro]", "GM [MEuro]", "GM %", "iKPI [Valoare]",
                 "Probabilitate semnare contract [%]"]
     for col in num_cols:
         if col in df.columns:
-            # Handle European decimal comma (e.g. "1,5" → 1.5)
             if df[col].dtype == object:
                 df[col] = df[col].astype(str).str.replace(",", ".").str.strip()
             df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # iKPI/proiect — keep as unit label string, already stripped above
+    # iKPI [Valoare] — numeric value already handled above
 
     # GM % — if stored as 0-100 range, convert to 0-1
     if "GM %" in df.columns:
@@ -180,7 +184,6 @@ def load_data(file_bytes: bytes) -> pd.DataFrame:
         df["_year"] = df[ref_col].dt.year
         df["_month"] = df[ref_col].dt.month
     else:
-        # Fallback: try to find a column that looks like a start date
         for fallback in ["Data solicitare oferta", "Data transmitere oferta"]:
             if fallback in df.columns:
                 df["_year"] = df[fallback].dt.year
@@ -400,14 +403,16 @@ def section_product_type(df: pd.DataFrame):
     for vas, grp in df.groupby("VAS"):
         pt = calc_processing_time(grp)
         total_oferte = len(grp[grp["Tip oferta"].str.strip().isin(TIP_OFERTA_TYPES)]) if "Tip oferta" in grp.columns else len(grp)
+        # iKPI/proiect is a unit label (MWp, MWh, LP, kVA...) — show most common unit
+        ikpi_unit = grp["iKPI/proiect"].mode()[0] if "iKPI/proiect" in grp.columns and not grp["iKPI/proiect"].dropna().empty else "—"
         rows.append({
             "VAS": vas,
             "Total Oferte": total_oferte,
             "Revenue (MEuro)": round(grp["Revenues [MEuro]"].sum(), 2) if "Revenues [MEuro]" in grp.columns else 0,
             "GM (MEuro)": round(grp["GM [MEuro]"].sum(), 2) if "GM [MEuro]" in grp.columns else 0,
             "Avg GM %": round(grp["GM %"].mean() * 100, 1) if "GM %" in grp.columns else 0,
-            "iKPI Projects": round(grp["iKPI/proiect"].sum(), 0) if "iKPI/proiect" in grp.columns else 0,
-            "iKPI Value": round(grp["iKPI [Valoare]"].sum(), 1) if "iKPI [Valoare]" in grp.columns else 0,
+            "iKPI Unit": ikpi_unit,
+            "iKPI Value": round(grp["iKPI [Valoare]"].sum(), 2) if "iKPI [Valoare]" in grp.columns else 0,
             "Avg Processing Time (days)": round(pt.mean(), 1) if not pt.isna().all() else 0,
         })
     vas_summary = pd.DataFrame(rows)
@@ -426,7 +431,7 @@ def section_product_type(df: pd.DataFrame):
                                    accent="#4a90d9", bg="#e8f0fe", val_color="#1a3a6b", label_color="#2c5fa8", sub_color="#6aa3e0")
             cards_html += kpi_card("Avg GM %", fmt_num(r["Avg GM %"], 1, "", "%"), "Arithmetic avg",
                                    accent="#2b9d8f", bg="#e0f2f1", val_color="#0d3b36", label_color="#1a7a6e", sub_color="#4dbfb3")
-            cards_html += kpi_card("iKPI Projects", fmt_num(r["iKPI Projects"], 0), "Sum iKPI/proiect",
+            cards_html += kpi_card("iKPI Projects", str(r["iKPI Unit"]), "Unitate iKPI/proiect",
                                    accent="#9b6fa8", bg="#f3e8f8", val_color="#3b1a4a", label_color="#7a3a9a", sub_color="#b890c8")
             cards_html += kpi_card("iKPI Value", fmt_num(r["iKPI Value"], 1), "iKPI [Valoare]",
                                    accent="#c0485a", bg="#fce4ec", val_color="#5c0a1a", label_color="#a0283a", sub_color="#d47080")
@@ -603,7 +608,8 @@ def section_signed_contracts(df: pd.DataFrame, label: str = ""):
     total_gm = signed_clean["GM [MEuro]"].sum() if "GM [MEuro]" in signed_clean.columns else 0
     avg_gm = signed_clean["GM %"].mean() * 100 if "GM %" in signed_clean.columns else 0
     total_ikpi = signed_clean["iKPI [Valoare]"].sum() if "iKPI [Valoare]" in signed_clean.columns else 0
-    total_ikpi_proj = signed_clean["iKPI/proiect"].sum() if "iKPI/proiect" in signed_clean.columns else 0
+    # iKPI/proiect is a unit label (MWp, MWh, LP...) — show most common
+    ikpi_unit = signed_clean["iKPI/proiect"].mode()[0] if "iKPI/proiect" in signed_clean.columns and not signed_clean["iKPI/proiect"].dropna().empty else "—"
 
     cards_html = '<div class="kpi-grid">'
     cards_html += kpi_card("Total Signed (All)", fmt_num(total_signed_all, 0), "All time in dataset",
@@ -616,9 +622,9 @@ def section_signed_contracts(df: pd.DataFrame, label: str = ""):
                            accent="#4a90d9", bg="#e8f0fe", val_color="#1a3a6b", label_color="#2c5fa8", sub_color="#6aa3e0")
     cards_html += kpi_card("Avg GM %", fmt_num(avg_gm, 1, "", "%"), "Arithmetic avg",
                            accent="#c0485a", bg="#fce4ec", val_color="#5c0a1a", label_color="#a0283a", sub_color="#d47080")
-    cards_html += kpi_card("iKPI Value", fmt_num(total_ikpi, 1), "iKPI [Valoare]",
+    cards_html += kpi_card("iKPI Value", fmt_num(total_ikpi, 2), "iKPI [Valoare]",
                            accent="#6a994e", bg="#f0f4e8", val_color="#2c4a1e", label_color="#4d7a2a", sub_color="#8ab86a")
-    cards_html += kpi_card("iKPI/proiect", fmt_num(total_ikpi_proj, 1), "Sum",
+    cards_html += kpi_card("iKPI Unit", str(ikpi_unit), "Unitate iKPI/proiect",
                            accent="#9b6fa8", bg="#f3e8f8", val_color="#3b1a4a", label_color="#7a3a9a", sub_color="#b890c8")
     cards_html += '</div>'
     st.markdown(cards_html, unsafe_allow_html=True)
@@ -658,9 +664,12 @@ def section_engineer_performance(df: pd.DataFrame):
         return
 
     df = df.copy()
+    # Ensure engineer names are fully stripped (catches any remaining whitespace)
+    df[eng_col] = df[eng_col].astype(str).str.strip()
+    df = df[df[eng_col].notna() & (df[eng_col] != "nan") & (df[eng_col] != "")]
     df["_proc_time"] = calc_processing_time(df)
 
-    # Pre-compute signed mask on the full (period-filtered) df
+    # Pre-compute signed mask on the period-filtered df
     if "Status Oferta" in df.columns:
         signed_mask = df["Status Oferta"].str.strip().str.lower() == "signed"
     else:
@@ -671,22 +680,25 @@ def section_engineer_performance(df: pd.DataFrame):
         bugetara  = (grp["Tip oferta"].str.strip() == "Bugetara").sum()  if "Tip oferta" in grp.columns else 0
         angajanta = (grp["Tip oferta"].str.strip() == "Angajanta").sum() if "Tip oferta" in grp.columns else 0
         revizie   = (grp["Tip oferta"].str.strip() == "Revizie").sum()   if "Tip oferta" in grp.columns else 0
-        total_rev = grp["Revenues [MEuro]"].sum() if "Revenues [MEuro]" in grp.columns else 0
+        total_rev = grp["Revenues [MEuro]"].sum()  if "Revenues [MEuro]" in grp.columns else 0
+        total_gm  = grp["GM [MEuro]"].sum()        if "GM [MEuro]" in grp.columns else 0
         avg_gm    = grp["GM %"].mean() * 100       if "GM %" in grp.columns else 0
         avg_pt    = grp["_proc_time"].mean()
-        # Count signed contracts: rows belonging to this engineer where status = Signed
-        signed    = signed_mask.loc[grp.index].sum()
+        signed    = int(signed_mask.loc[grp.index].sum())
+        ikpi_val  = grp["iKPI [Valoare]"].sum()    if "iKPI [Valoare]" in grp.columns else 0
 
         eng_stats.append({
-            "Engineer": eng,
-            "Bugetara": bugetara,
-            "Angajanta": angajanta,
-            "Revizie": revizie,
-            "Total Offers": bugetara + angajanta + revizie,
-            "Total Revenue (MEuro)": round(total_rev, 2),
-            "Avg GM %": round(avg_gm, 1),
-            "Avg Processing Time (days)": round(avg_pt, 1) if not np.isnan(avg_pt) else 0,
-            "Signed Contracts": int(signed),
+            "Engineer":                  eng,
+            "Bugetara":                  int(bugetara),
+            "Angajanta":                 int(angajanta),
+            "Revizie":                   int(revizie),
+            "Total Offers":              int(bugetara + angajanta + revizie),
+            "Total Revenue (MEuro)":     round(total_rev, 2),
+            "Total GM (MEuro)":          round(total_gm, 2),
+            "Avg GM %":                  round(avg_gm, 1),
+            "iKPI [Valoare]":            round(ikpi_val, 2),
+            "Avg Processing Time (days)": round(avg_pt, 1) if pd.notna(avg_pt) else 0,
+            "Signed Contracts":          signed,
         })
 
     eng_df = pd.DataFrame(eng_stats).sort_values("Total Offers", ascending=False)
@@ -712,7 +724,7 @@ def section_engineer_performance(df: pd.DataFrame):
                       color_discrete_sequence=PALETTE)
         st.plotly_chart(styled_bar(fig2), use_container_width=True)
 
-    col3, _ = st.columns(2)
+    col3, col4 = st.columns(2)
     with col3:
         fig3 = px.bar(eng_df, x="Engineer", y="Signed Contracts",
                       title="Signed Contracts per Engineer",
@@ -720,6 +732,14 @@ def section_engineer_performance(df: pd.DataFrame):
                       text="Signed Contracts")
         fig3.update_traces(textposition="outside")
         st.plotly_chart(styled_bar(fig3), use_container_width=True)
+
+    with col4:
+        fig4 = px.bar(eng_df, x="Engineer", y="Total Revenue (MEuro)",
+                      title="Total Revenue per Engineer (MEuro)",
+                      color="Engineer", color_discrete_sequence=PALETTE,
+                      text=eng_df["Total Revenue (MEuro)"].round(2))
+        fig4.update_traces(textposition="outside")
+        st.plotly_chart(styled_bar(fig4), use_container_width=True)
 
 
 # ─────────────────────────────────────────────
