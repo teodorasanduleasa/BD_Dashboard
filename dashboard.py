@@ -309,7 +309,6 @@ def section_pipeline_kpis(df: pd.DataFrame):
     total_rev = df["Revenues [MEuro]"].sum() if "Revenues [MEuro]" in df.columns else 0
     total_gm = df["GM [MEuro]"].sum() if "GM [MEuro]" in df.columns else 0
     avg_gm_pct = df["GM %"].mean() * 100 if "GM %" in df.columns else 0
-    total_ikpi_proj = df["iKPI/proiect"].sum() if "iKPI/proiect" in df.columns else 0
     sum_ikpi_val = df["iKPI [Valoare]"].sum() if "iKPI [Valoare]" in df.columns else 0
 
     cards_html = '<div class="kpi-grid">'
