@@ -593,38 +593,25 @@ def section_signed_contracts(df: pd.DataFrame, label: str = ""):
         st.info("Status Oferta column not found.")
         return
 
-    signed_df = df[df["Status Oferta"].str.strip() == "Signed"]
-    if signed_df.empty:
+    signed_clean = df[df["Status Oferta"].str.strip() == "Signed"].copy()
+    if signed_clean.empty:
         st.info("No signed contracts in this period.")
         return
 
-    # Apply business rules to signed subset
-    signed_clean = apply_business_rules(signed_df)
-
-    total_signed_all = len(df[df["Status Oferta"].str.strip() == "Signed"])
-    total_signed_period = len(signed_clean)
-    total_rev = signed_clean["Revenues [MEuro]"].sum() if "Revenues [MEuro]" in signed_clean.columns else 0
-    total_gm = signed_clean["GM [MEuro]"].sum() if "GM [MEuro]" in signed_clean.columns else 0
-    avg_gm = signed_clean["GM %"].mean() * 100 if "GM %" in signed_clean.columns else 0
-    total_ikpi = signed_clean["iKPI [Valoare]"].sum() if "iKPI [Valoare]" in signed_clean.columns else 0
-    # iKPI/proiect is a unit label (MWp, MWh, LP...) — show most common
-    ikpi_unit = signed_clean["iKPI/proiect"].mode()[0] if "iKPI/proiect" in signed_clean.columns and not signed_clean["iKPI/proiect"].dropna().empty else "—"
+    total_signed  = len(signed_clean)
+    total_rev     = signed_clean["Revenues [MEuro]"].sum() if "Revenues [MEuro]" in signed_clean.columns else 0
+    total_gm      = signed_clean["GM [MEuro]"].sum()       if "GM [MEuro]" in signed_clean.columns else 0
+    avg_gm        = signed_clean["GM %"].mean() * 100      if "GM %" in signed_clean.columns else 0
 
     cards_html = '<div class="kpi-grid">'
-    cards_html += kpi_card("Total Signed (All)", fmt_num(total_signed_all, 0), "All time in dataset",
+    cards_html += kpi_card("Total Contracte Semnate", fmt_num(total_signed, 0), "Perioada selectata",
                            accent="#52b788", bg="#1b4332", val_color="#d8f3dc", label_color="#95d5b2", sub_color="#52b788")
-    cards_html += kpi_card("Signed (Period)", fmt_num(total_signed_period, 0), "After business rules",
-                           accent="#2b9d8f", bg="#e0f2f1", val_color="#0d3b36", label_color="#1a7a6e", sub_color="#4dbfb3")
     cards_html += kpi_card("Signed Revenue", fmt_num(total_rev, 2, "€", "M"), "MEuro",
                            accent="#e07c24", bg="#fff3e0", val_color="#7b3f00", label_color="#c25e00", sub_color="#e09a50")
     cards_html += kpi_card("Signed GM", fmt_num(total_gm, 2, "€", "M"), "MEuro",
                            accent="#4a90d9", bg="#e8f0fe", val_color="#1a3a6b", label_color="#2c5fa8", sub_color="#6aa3e0")
     cards_html += kpi_card("Avg GM %", fmt_num(avg_gm, 1, "", "%"), "Arithmetic avg",
                            accent="#c0485a", bg="#fce4ec", val_color="#5c0a1a", label_color="#a0283a", sub_color="#d47080")
-    cards_html += kpi_card("iKPI Value", fmt_num(total_ikpi, 2), "iKPI [Valoare]",
-                           accent="#6a994e", bg="#f0f4e8", val_color="#2c4a1e", label_color="#4d7a2a", sub_color="#8ab86a")
-    cards_html += kpi_card("iKPI Unit", str(ikpi_unit), "Unitate iKPI/proiect",
-                           accent="#9b6fa8", bg="#f3e8f8", val_color="#3b1a4a", label_color="#7a3a9a", sub_color="#b890c8")
     cards_html += '</div>'
     st.markdown(cards_html, unsafe_allow_html=True)
 
@@ -649,6 +636,35 @@ def section_signed_contracts(df: pd.DataFrame, label: str = ""):
                               color_discrete_sequence=PALETTE, hole=0.35)
                 fig2.update_layout(**PLOTLY_THEME)
                 st.plotly_chart(fig2, use_container_width=True)
+
+        # ── Detail table: one row per signed contract ──
+        st.markdown('<div class="section-header">Detaliu Contracte Semnate</div>', unsafe_allow_html=True)
+
+        display_cols = ["Client name", "VAS", "Tip oferta", "Inginer Ofertare",
+                        "Revenues [MEuro]", "GM [MEuro]", "GM %",
+                        "Data start oferta", "Data transmitere oferta", "Motiv KO", "Observatii"]
+        display_cols = [c for c in display_cols if c in signed_clean.columns]
+
+        table = signed_clean[display_cols].copy()
+
+        # Format GM % as percentage string for display
+        if "GM %" in table.columns:
+            table["GM %"] = (table["GM %"] * 100).round(1).astype(str) + "%"
+
+        # Format dates
+        for dcol in ["Data start oferta", "Data transmitere oferta"]:
+            if dcol in table.columns:
+                table[dcol] = pd.to_datetime(table[dcol]).dt.strftime("%d.%m.%Y")
+
+        # Round numeric columns
+        for ncol in ["Revenues [MEuro]", "GM [MEuro]"]:
+            if ncol in table.columns:
+                table[ncol] = table[ncol].round(2)
+
+        table = table.reset_index(drop=True)
+        table.index = table.index + 1  # start from 1
+
+        st.dataframe(table, use_container_width=True, height=400)
 
 
 # ─────────────────────────────────────────────
