@@ -133,25 +133,45 @@ def load_data(file_bytes: bytes) -> pd.DataFrame:
     """Load and clean the Excel file."""
     df = pd.read_excel(io.BytesIO(file_bytes))
 
-    # Normalize column names: strip whitespace
-    df.columns = [c.strip() for c in df.columns]
+    # Normalize column names: strip whitespace and normalize spaces
+    df.columns = [str(c).strip().replace("\xa0", " ").replace("  ", " ") for c in df.columns]
 
-    # Expected column mapping (flexible)
-    date_cols = ["Data solicitare oferta", "Data start oferta", "Data transmitere oferta", "Data estimata semnare contract"]
+    # Robust date parser — tries multiple formats
+    def parse_date_col(series: pd.Series) -> pd.Series:
+        # If already datetime (Excel numeric dates), pandas handles it
+        if pd.api.types.is_datetime64_any_dtype(series):
+            return series
+        # Try dayfirst (European format DD/MM/YYYY)
+        parsed = pd.to_datetime(series, errors="coerce", dayfirst=True)
+        # If more than 80% parsed successfully, use it
+        if parsed.notna().mean() >= 0.8:
+            return parsed
+        # Try yearfirst (YYYY-MM-DD)
+        parsed2 = pd.to_datetime(series, errors="coerce", dayfirst=False)
+        if parsed2.notna().mean() >= parsed.notna().mean():
+            return parsed2
+        return parsed
+
+    date_cols = ["Data solicitare oferta", "Data start oferta",
+                 "Data transmitere oferta", "Data estimata semnare contract"]
     for col in date_cols:
         if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
+            df[col] = parse_date_col(df[col])
 
     # Numeric columns
     num_cols = ["Revenues [MEuro]", "GM [MEuro]", "GM %", "iKPI [Valoare]", "iKPI/proiect",
                 "Probabilitate semnare contract [%]"]
     for col in num_cols:
         if col in df.columns:
+            # Handle European decimal comma (e.g. "1,5" → 1.5)
+            if df[col].dtype == object:
+                df[col] = df[col].astype(str).str.replace(",", ".").str.strip()
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # GM % — if stored as 0-100 range, convert to 0-1 only if max > 1
+    # GM % — if stored as 0-100 range, convert to 0-1
     if "GM %" in df.columns:
-        if df["GM %"].dropna().max() > 1:
+        valid = df["GM %"].dropna()
+        if len(valid) > 0 and valid.max() > 1:
             df["GM %"] = df["GM %"] / 100
 
     # Extract Year / Month from Data start oferta (primary date for filtering)
@@ -159,6 +179,14 @@ def load_data(file_bytes: bytes) -> pd.DataFrame:
     if ref_col in df.columns:
         df["_year"] = df[ref_col].dt.year
         df["_month"] = df[ref_col].dt.month
+    else:
+        # Fallback: try to find a column that looks like a start date
+        for fallback in ["Data solicitare oferta", "Data transmitere oferta"]:
+            if fallback in df.columns:
+                df["_year"] = df[fallback].dt.year
+                df["_month"] = df[fallback].dt.month
+                st.warning(f"Coloana 'Data start oferta' nu a fost găsită. Se folosește '{fallback}' pentru filtrare.")
+                break
 
     return df
 
@@ -846,7 +874,9 @@ def main():
         df_full = load_data(uploaded.read())
 
     if "_year" not in df_full.columns:
-        st.error("Could not parse date columns. Please check that 'Data start oferta' is present and formatted correctly.")
+        st.error("Nu s-au putut parsa coloanele de dată. Coloane găsite în fișier:")
+        st.code(", ".join(df_full.columns.tolist()))
+        st.stop()
         return
 
     # ── Sidebar ──────────────────────────────
